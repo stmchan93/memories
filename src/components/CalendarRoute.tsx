@@ -17,6 +17,7 @@ import {
   isSupabasePhotoStorageConfigured,
   isSupabasePhotoUrl,
   removeChapterPhotoByUrl,
+  UNSUPPORTED_PHOTO_MESSAGE,
   uploadChapterPhotoFile,
 } from '../lib/supabasePhotos';
 import { useResolvedPhotoUrl } from './ResolvedPhoto';
@@ -256,7 +257,14 @@ export function CalendarRoute({
             date: draft.date,
           });
         } catch (error) {
-          console.error('Could not upload photo to Supabase storage. Falling back to local-only.', error);
+          if (error instanceof Error && error.message === UNSUPPORTED_PHOTO_MESSAGE) {
+            throw error;
+          }
+
+          console.error(
+            'Could not upload photo to Supabase storage. Falling back to local-only.',
+            error,
+          );
           nextPhotoUrl = await readFileAsDataUrl(file);
           nextPhotoMessage = 'Stored locally on this device for now.';
         }
@@ -278,12 +286,16 @@ export function CalendarRoute({
       }));
       setPhotoMessage(nextPhotoMessage);
       setSaveMessage(null);
-    } catch {
-      setPhotoMessage(
-        canStorePhotosRemotely
-          ? 'Could not upload that photo right now.'
-          : 'Could not load that photo.',
-      );
+    } catch (error) {
+      if (error instanceof Error && error.message === UNSUPPORTED_PHOTO_MESSAGE) {
+        setPhotoMessage(UNSUPPORTED_PHOTO_MESSAGE);
+      } else {
+        setPhotoMessage(
+          canStorePhotosRemotely
+            ? 'Could not upload that photo right now.'
+            : 'Could not load that photo.',
+        );
+      }
     } finally {
       setIsMutatingPhotos(false);
       event.target.value = '';
@@ -498,7 +510,7 @@ export function CalendarRoute({
             <Field label="Photo" hint={photoFieldHint}>
               <input
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
                 disabled={!isEditingToday || isMutatingPhotos}
                 onChange={handlePhotoChange}
               />

@@ -2,6 +2,16 @@ import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 
 const PHOTO_BUCKET = 'chapter-photos';
 const PHOTO_REF_PREFIX = `supabase:${PHOTO_BUCKET}/`;
+const SUPPORTED_PHOTO_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/avif',
+]);
+
+export const UNSUPPORTED_PHOTO_MESSAGE =
+  'This photo format is not supported here yet. Use JPG, PNG, WebP, GIF, or AVIF.';
 
 export const DEFAULT_SIGNED_URL_TTL = 60 * 60;
 export const PUBLIC_SHARE_SIGNED_URL_TTL = 60 * 60 * 24 * 30;
@@ -73,8 +83,14 @@ const getFileExtension = (file: File) => {
   return extensionFromMimeType(file.type);
 };
 
+const validatePhotoFile = (file: File) => {
+  if (!file.type || !SUPPORTED_PHOTO_MIME_TYPES.has(file.type)) {
+    throw new Error(UNSUPPORTED_PHOTO_MESSAGE);
+  }
+};
+
 const resizeImageFile = (file: File) =>
-  new Promise<Blob>((resolve) => {
+  new Promise<Blob>((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
     const image = new Image();
 
@@ -108,7 +124,7 @@ const resizeImageFile = (file: File) =>
 
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      resolve(file);
+      reject(new Error(UNSUPPORTED_PHOTO_MESSAGE));
     };
 
     image.src = objectUrl;
@@ -269,6 +285,7 @@ export const uploadChapterPhotoFile = async ({
   userId: string;
   date: string;
 }) => {
+  validatePhotoFile(file);
   const blob = await resizeImageFile(file);
   return uploadPhotoBlob({
     blob,
