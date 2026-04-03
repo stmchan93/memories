@@ -35,6 +35,8 @@ const mapUserChapterRow = (row: UserChapterRow) => {
   };
 };
 
+const isLocalPhotoDataUrl = (value: string) => value.startsWith('data:');
+
 const serializeAppDataForCloud = ({
   data,
   slug,
@@ -45,6 +47,10 @@ const serializeAppDataForCloud = ({
   ownerKey: string;
 }) => ({
   ...data,
+  dailyCheckins: data.dailyCheckins.map((checkin) => ({
+    ...checkin,
+    photoDataUrls: checkin.photoDataUrls.filter((photoDataUrl) => !isLocalPhotoDataUrl(photoDataUrl)),
+  })),
   shareSettings: {
     ...data.shareSettings,
     slug,

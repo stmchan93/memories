@@ -10,6 +10,7 @@ import {
 } from './supabasePhotos';
 
 const PUBLIC_MEMORY_LIMIT = 6;
+const isLocalPhotoDataUrl = (value: string) => value.startsWith('data:');
 
 export const DEFAULT_PUBLIC_SUBTITLE =
   'A simple recap of the days, memories, and things from this chapter.';
@@ -71,7 +72,7 @@ const getPublicMemories = async (data: AppData): Promise<PublishedMemory[]> =>
       .slice(0, PUBLIC_MEMORY_LIMIT)
       .map(async (entry): Promise<PublishedMemory> => {
         const resolvedPhotoUrls = await resolveChapterPhotoUrls(
-          entry.photoDataUrls,
+          entry.photoDataUrls.filter((photoDataUrl) => !isLocalPhotoDataUrl(photoDataUrl)),
           PUBLIC_SHARE_SIGNED_URL_TTL,
         ).catch(() => []);
         const photoDataUrls: string[] = resolvedPhotoUrls.flatMap((photoUrl) =>

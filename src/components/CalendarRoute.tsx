@@ -263,14 +263,24 @@ export function CalendarRoute({
     setIsMutatingPhotos(true);
 
     try {
-      const nextPhotoUrl =
-        canStorePhotosRemotely && photoStorageUserId
-          ? await uploadChapterPhotoFile({
-              file,
-              userId: photoStorageUserId,
-              date: draft.date,
-            })
-          : await readFileAsDataUrl(file);
+      let nextPhotoUrl: string;
+      let nextPhotoMessage: string | null = null;
+
+      if (canStorePhotosRemotely && photoStorageUserId) {
+        try {
+          nextPhotoUrl = await uploadChapterPhotoFile({
+            file,
+            userId: photoStorageUserId,
+            date: draft.date,
+          });
+        } catch (error) {
+          console.error('Could not upload photo to Supabase storage. Falling back to local-only.', error);
+          nextPhotoUrl = await readFileAsDataUrl(file);
+          nextPhotoMessage = 'Stored locally on this device for now.';
+        }
+      } else {
+        nextPhotoUrl = await readFileAsDataUrl(file);
+      }
 
       const currentPhotoUrl = draft.photoDataUrls[0] ?? null;
 
@@ -284,7 +294,7 @@ export function CalendarRoute({
         ...current,
         photoDataUrls: [nextPhotoUrl],
       }));
-      setPhotoMessage(null);
+      setPhotoMessage(nextPhotoMessage);
       setSaveMessage(null);
     } catch {
       setPhotoMessage(
