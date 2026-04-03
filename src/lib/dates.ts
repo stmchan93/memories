@@ -29,3 +29,12 @@ export const shiftDateInput = (value: string, days: number) => {
 
 export const startOfLocalDay = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+export const getCurrentWeekEndingDate = (anchor = new Date()) => {
+  const date = startOfLocalDay(anchor);
+  const day = date.getDay();
+  const daysUntilSunday = day === 0 ? 0 : 7 - day;
+  date.setDate(date.getDate() + daysUntilSunday);
+
+  return formatDateInput(date);
+};

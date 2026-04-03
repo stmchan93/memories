@@ -3,3 +3,6 @@ dist
 .DS_Store
 *.tsbuildinfo
 .vercel
+.env.local
+playwright-report
+test-results

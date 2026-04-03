@@ -3,6 +3,7 @@ import type {
   CareerEntry,
   DailyCheckin,
   MoneySnapshot,
+  Project,
   Profile,
   WeeklyReview,
 } from '../types';
@@ -120,6 +121,31 @@ export type CareerHistoryPoint = {
   label: string;
   applications: number;
   interviews: number;
+};
+
+export type WeeklyGoalProgressItem = {
+  key:
+    | 'buildHours'
+    | 'applications'
+    | 'workouts'
+    | 'monthlySpendTarget';
+  label: string;
+  shortLabel: string;
+  currentValue: number | null;
+  targetValue: number;
+  progress: number;
+  valueLabel: string;
+  remainingLabel: string;
+  statusLabel: string;
+  statusTone: 'complete' | 'ahead' | 'on-pace' | 'behind' | 'needs-data';
+  isComplete: boolean;
+};
+
+export type CompletedPlanItem = {
+  id: string;
+  date: string;
+  label: string;
+  text: string;
 };
 
 export const getLatestMoneySnapshot = (data: AppData): MoneySnapshot | null =>
@@ -559,14 +585,27 @@ export const getExperimentSummary = (checkins: DailyCheckin[]) => {
   const thisWeekCheckins = checkins.filter((checkin) => isWithinCurrentWeek(checkin.date));
 
   return {
+    meaningfulThingStreak: getConsecutiveStreak(
+      checkins,
+      (checkin) => checkin.didMeaningfulThing,
+    ),
     buildStreak: getConsecutiveStreak(checkins, (checkin) => checkin.hoursBuilding > 0),
     workoutStreak: getConsecutiveStreak(checkins, (checkin) => checkin.didExercise),
+    workoutsThisWeek: thisWeekCheckins.filter((checkin) => checkin.didExercise).length,
+    checkinsThisWeek: thisWeekCheckins.length,
+    meaningfulThingsThisWeek: thisWeekCheckins.filter(
+      (checkin) => checkin.didMeaningfulThing,
+    ).length,
     hoursBuiltThisWeek: thisWeekCheckins.reduce(
       (total, checkin) => total + checkin.hoursBuilding,
       0,
     ),
     hoursJobSearchingThisWeek: thisWeekCheckins.reduce(
       (total, checkin) => total + checkin.hoursJobSearching,
+      0,
+    ),
+    applicationsThisWeek: thisWeekCheckins.reduce(
+      (total, checkin) => total + (checkin.applicationsSent ?? 0),
       0,
     ),
   };
@@ -597,12 +636,44 @@ export const getTodayCheckin = (checkins: DailyCheckin[]) => {
   return checkins.find((checkin) => checkin.date === today) ?? null;
 };
 
+export const getYesterdayCheckin = (checkins: DailyCheckin[]) => {
+  const yesterday = shiftDateInput(formatDateInput(startOfLocalDay(new Date())), -1);
+
+  return checkins.find((checkin) => checkin.date === yesterday) ?? null;
+};
+
 export const getDailyCheckinByDate = (checkins: DailyCheckin[], date: string) =>
   checkins.find((checkin) => checkin.date === date) ?? null;
 
 export const getRecentDailyCheckins = (checkins: DailyCheckin[], limit = 7) =>
   [...checkins]
     .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, limit);
+
+export const getRecentDayEntries = (checkins: DailyCheckin[], limit = 7) =>
+  getRecentDailyCheckins(checkins, limit);
+
+export const getHighlightedDayEntries = (checkins: DailyCheckin[], limit = 6) =>
+  getRecentDailyCheckins(
+    checkins.filter((checkin) => checkin.isHighlight || Boolean(checkin.highlightNote.trim())),
+    limit,
+  );
+
+export const getCompletedPlanItems = (
+  checkins: DailyCheckin[],
+  limit = 12,
+): CompletedPlanItem[] =>
+  getRecentDailyCheckins(checkins, checkins.length)
+    .flatMap((checkin) =>
+      checkin.planItems
+        .filter((item) => item.completed && item.text.trim())
+        .map((item) => ({
+          id: item.id,
+          date: checkin.date,
+          label: formatShortDateLabel(checkin.date),
+          text: item.text.trim(),
+        })),
+    )
     .slice(0, limit);
 
 export const getDailyHistorySeries = (checkins: DailyCheckin[], days = 14): DailyHistoryPoint[] => {
@@ -631,3 +702,225 @@ export const getRecentWeeklyReviews = (reviews: WeeklyReview[], limit = 6) =>
 
 export const getLatestWeeklyReview = (reviews: WeeklyReview[]) =>
   [...reviews].sort((a, b) => b.weekEndingDate.localeCompare(a.weekEndingDate))[0] ?? null;
+
+export const getCurrentWeeklyReview = (reviews: WeeklyReview[]) => {
+  const currentWeekEndingDate = getWeekEndingDate(todayDateInput());
+
+  if (currentWeekEndingDate == null) {
+    return null;
+  }
+
+  return reviews.find((review) => review.weekEndingDate === currentWeekEndingDate) ?? null;
+};
+
+const getCurrentWeekProgress = (anchor = new Date()) => {
+  const start = getCurrentWeekStart(anchor);
+  const end = getCurrentWeekEnd(anchor);
+  const total = end.getTime() - start.getTime();
+  const elapsed = Math.min(
+    Math.max(startOfLocalDay(anchor).getTime() - start.getTime() + MS_PER_DAY, 0),
+    total,
+  );
+
+  if (total <= 0) {
+    return 0;
+  }
+
+  return elapsed / total;
+};
+
+export const hasWeeklyGoals = (review: WeeklyReview | null) =>
+  review != null &&
+  (review.weeklyGoals.buildHours != null ||
+    review.weeklyGoals.applications != null ||
+    review.weeklyGoals.workouts != null ||
+    review.weeklyGoals.monthlySpendTarget != null);
+
+const formatGoalNumber = (value: number) =>
+  Number.isInteger(value) ? `${value}` : formatDecimal(value, 1);
+
+const buildStandardGoalProgress = ({
+  key,
+  label,
+  shortLabel,
+  currentValue,
+  targetValue,
+  unit,
+  remainingLabel,
+}: {
+  key: WeeklyGoalProgressItem['key'];
+  label: string;
+  shortLabel: string;
+  currentValue: number;
+  targetValue: number;
+  unit: string;
+  remainingLabel: string;
+}): WeeklyGoalProgressItem => {
+  const weekProgress = getCurrentWeekProgress();
+  const cappedProgress =
+    targetValue <= 0 ? 1 : Math.min(currentValue / targetValue, 1);
+  const remaining = Math.max(targetValue - currentValue, 0);
+  const isComplete = currentValue >= targetValue;
+  const paceTarget = targetValue * weekProgress;
+  const paceRatio = paceTarget <= 0 ? 0 : currentValue / paceTarget;
+  const currentLabel = `${formatGoalNumber(currentValue)} / ${formatGoalNumber(targetValue)} ${unit}`;
+  const statusTone: WeeklyGoalProgressItem['statusTone'] = isComplete
+    ? 'complete'
+    : currentValue === 0 && weekProgress <= 0.2
+      ? 'on-pace'
+      : paceRatio >= 1.2
+        ? 'ahead'
+        : paceRatio >= 0.9
+          ? 'on-pace'
+          : 'behind';
+  const statusLabel =
+    statusTone === 'complete'
+      ? 'Goal reached'
+      : statusTone === 'ahead'
+        ? 'Ahead of pace'
+        : statusTone === 'on-pace'
+          ? 'On pace'
+          : 'Behind pace';
+
+  return {
+    key,
+    label,
+    shortLabel,
+    currentValue,
+    targetValue,
+    progress: cappedProgress,
+    valueLabel: currentLabel,
+    remainingLabel: `${formatGoalNumber(remaining)} ${remainingLabel} left`,
+    statusLabel,
+    statusTone,
+    isComplete,
+  };
+};
+
+export const getWeeklyGoalsProgress = (
+  data: AppData,
+  review: WeeklyReview | null = getCurrentWeeklyReview(data.weeklyReviews),
+): WeeklyGoalProgressItem[] => {
+  if (!review) {
+    return [];
+  }
+
+  const experimentSummary = getExperimentSummary(data.dailyCheckins);
+  const estimatedMonthlyBurn = getEstimatedMonthlyBurn(data.moneySnapshots);
+  const rows: WeeklyGoalProgressItem[] = [];
+
+  if (review.weeklyGoals.buildHours != null) {
+    rows.push(
+      buildStandardGoalProgress({
+        key: 'buildHours',
+        label: 'Build hours',
+        shortLabel: 'Build',
+        currentValue: experimentSummary.hoursBuiltThisWeek,
+        targetValue: review.weeklyGoals.buildHours,
+        unit: 'hours',
+        remainingLabel: 'hours',
+      }),
+    );
+  }
+
+  if (review.weeklyGoals.applications != null) {
+    rows.push(
+      buildStandardGoalProgress({
+        key: 'applications',
+        label: 'Applications',
+        shortLabel: 'Apply',
+        currentValue: experimentSummary.applicationsThisWeek,
+        targetValue: review.weeklyGoals.applications,
+        unit: 'sent',
+        remainingLabel: 'applications',
+      }),
+    );
+  }
+
+  if (review.weeklyGoals.workouts != null) {
+    rows.push(
+      buildStandardGoalProgress({
+        key: 'workouts',
+        label: 'Workouts',
+        shortLabel: 'Move',
+        currentValue: experimentSummary.workoutsThisWeek,
+        targetValue: review.weeklyGoals.workouts,
+        unit: 'done',
+        remainingLabel: 'workouts',
+      }),
+    );
+  }
+
+  if (review.weeklyGoals.monthlySpendTarget != null) {
+    const targetValue = review.weeklyGoals.monthlySpendTarget;
+    const progress =
+      estimatedMonthlyBurn == null
+        ? 0
+        : targetValue <= 0
+          ? estimatedMonthlyBurn <= 0
+            ? 1
+            : 0
+          : Math.min(estimatedMonthlyBurn / targetValue, 1);
+    const delta =
+      estimatedMonthlyBurn == null ? null : targetValue - estimatedMonthlyBurn;
+
+    rows.push({
+      key: 'monthlySpendTarget',
+      label: 'Monthly spend',
+      shortLabel: 'Spend',
+      currentValue: estimatedMonthlyBurn,
+      targetValue,
+      progress,
+      valueLabel:
+        estimatedMonthlyBurn == null
+          ? `Need 1 more checkpoint · target ${formatCurrency(targetValue)}`
+          : `${formatCurrency(estimatedMonthlyBurn)} / ${formatCurrency(targetValue)}`,
+      remainingLabel:
+        estimatedMonthlyBurn == null
+          ? 'Add one more cash checkpoint'
+          : delta != null && delta >= 0
+            ? `${formatCurrency(delta)} under target`
+            : `${formatCurrency(Math.abs(delta ?? 0))} over target`,
+      statusLabel:
+        estimatedMonthlyBurn == null
+          ? 'Need data'
+          : delta != null && delta >= 0
+            ? 'On pace'
+            : 'Over target',
+      statusTone:
+        estimatedMonthlyBurn == null
+          ? 'needs-data'
+          : delta != null && delta >= 0
+            ? 'on-pace'
+            : 'behind',
+      isComplete: estimatedMonthlyBurn != null && estimatedMonthlyBurn <= targetValue,
+    });
+  }
+
+  return rows;
+};
+
+export const getProjectSummary = (projects: Project[]) => ({
+  total: projects.length,
+  active: projects.filter((project) => project.status === 'active').length,
+  shipped: projects.filter((project) => project.status === 'shipped').length,
+  paused: projects.filter((project) => project.status === 'paused').length,
+});
+
+export const getRecentProjects = (projects: Project[], limit = 6) =>
+  [...projects]
+    .sort((a, b) => (b.shippedAt ?? b.updatedAt).localeCompare(a.shippedAt ?? a.updatedAt))
+    .slice(0, limit);
+
+export const getChapterSummary = (data: AppData) => {
+  const photoCount = data.dailyCheckins.reduce(
+    (total, checkin) => total + checkin.photoDataUrls.length,
+    0,
+  );
+
+  return {
+    totalEntries: data.dailyCheckins.length,
+    photoCount,
+    projectsWorkedOn: data.projects.length,
+  };
+};
