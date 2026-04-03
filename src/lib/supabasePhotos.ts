@@ -36,8 +36,45 @@ const canvasToBlob = (
     );
   });
 
+const sanitizeExtension = (value: string | null | undefined) => {
+  const trimmed = (value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  return trimmed || null;
+};
+
+const extensionFromMimeType = (mimeType: string) => {
+  switch (mimeType) {
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    case 'image/gif':
+      return 'gif';
+    case 'image/heic':
+      return 'heic';
+    case 'image/heif':
+      return 'heif';
+    case 'image/avif':
+      return 'avif';
+    case 'image/jpeg':
+    case 'image/jpg':
+    default:
+      return 'jpg';
+  }
+};
+
+const getFileExtension = (file: File) => {
+  const fromName = sanitizeExtension(file.name.split('.').pop());
+
+  if (fromName) {
+    return fromName;
+  }
+
+  return extensionFromMimeType(file.type);
+};
+
 const resizeImageFile = (file: File) =>
-  new Promise<Blob>((resolve, reject) => {
+  new Promise<Blob>((resolve) => {
     const objectUrl = URL.createObjectURL(file);
     const image = new Image();
 
@@ -54,15 +91,16 @@ const resizeImageFile = (file: File) =>
         const context = canvas.getContext('2d');
 
         if (!context) {
-          throw new Error('Could not prepare that image.');
+          resolve(file);
+          return;
         }
 
         context.drawImage(image, 0, 0, width, height);
         const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
         const blob = await canvasToBlob(canvas, type, type === 'image/jpeg' ? 0.82 : undefined);
         resolve(blob);
-      } catch (error) {
-        reject(error);
+      } catch {
+        resolve(file);
       } finally {
         URL.revokeObjectURL(objectUrl);
       }
@@ -70,7 +108,7 @@ const resizeImageFile = (file: File) =>
 
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error('Could not prepare that image.'));
+      resolve(file);
     };
 
     image.src = objectUrl;
@@ -102,26 +140,31 @@ const uploadPhotoBlob = async ({
   blob,
   userId,
   date,
+  extension,
+  contentType,
 }: {
   blob: Blob;
   userId: string;
   date: string;
+  extension?: string;
+  contentType?: string;
 }) => {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase storage is not configured for this app.');
   }
 
   const supabase = getSupabaseClient();
-  const extension = blob.type === 'image/png' ? 'png' : 'jpg';
+  const normalizedExtension = sanitizeExtension(extension) ?? extensionFromMimeType(blob.type);
+  const normalizedContentType = contentType?.trim() || blob.type || 'application/octet-stream';
   const path = buildPhotoPath({
     userId,
     date,
-    extension,
+    extension: normalizedExtension,
   });
 
   const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, blob, {
     cacheControl: '3600',
-    contentType: blob.type,
+    contentType: normalizedContentType,
     upsert: false,
   });
 
@@ -231,6 +274,8 @@ export const uploadChapterPhotoFile = async ({
     blob,
     userId,
     date,
+    extension: getFileExtension(file),
+    contentType: blob.type || file.type,
   });
 };
 

@@ -101,37 +101,19 @@ const doesEventMatchDate = (event: SyncedCalendarEvent, date: string) => {
 
 const readFileAsDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const image = new Image();
+    const reader = new FileReader();
 
-    image.onload = () => {
-      const maxDimension = 1600;
-      const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
-      const width = Math.max(1, Math.round(image.width * scale));
-      const height = Math.max(1, Math.round(image.height * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-
-      const context = canvas.getContext('2d');
-
-      if (!context) {
-        URL.revokeObjectURL(objectUrl);
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
         reject(new Error('Could not read image.'));
         return;
       }
 
-      context.drawImage(image, 0, 0, width, height);
-      URL.revokeObjectURL(objectUrl);
-      resolve(canvas.toDataURL('image/jpeg', 0.82));
+      resolve(reader.result);
     };
 
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('Could not read image.'));
-    };
-
-    image.src = objectUrl;
+    reader.onerror = () => reject(new Error('Could not read image.'));
+    reader.readAsDataURL(file);
   });
 
 export function CalendarRoute({
