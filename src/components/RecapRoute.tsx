@@ -24,10 +24,33 @@ const parseSummaryLines = (value: string) =>
     .map((line) => line.trim())
     .filter(Boolean);
 
-const isBulletList = (lines: string[]) =>
-  lines.length > 1 && lines.every((line) => /^[-*•]\s+/.test(line));
+const isBulletLine = (line: string) => /^[-*•]\s+/.test(line);
 
 const cleanBulletLine = (line: string) => line.replace(/^[-*•]\s+/, '').trim();
+
+type SummaryBlock =
+  | { type: 'text'; lines: string[] }
+  | { type: 'list'; lines: string[] };
+
+const parseSummaryBlocks = (summary: string): SummaryBlock[] => {
+  const lines = parseSummaryLines(summary);
+  const blocks: SummaryBlock[] = [];
+
+  lines.forEach((line) => {
+    const nextType: SummaryBlock['type'] = isBulletLine(line) ? 'list' : 'text';
+    const lastBlock = blocks[blocks.length - 1];
+    const nextLine = nextType === 'list' ? cleanBulletLine(line) : line;
+
+    if (lastBlock?.type === nextType) {
+      lastBlock.lines.push(nextLine);
+      return;
+    }
+
+    blocks.push({ type: nextType, lines: [nextLine] });
+  });
+
+  return blocks;
+};
 
 const getMemoryHighlights = (entries: DailyCheckin[], limit = 6) => {
   return [...entries]
@@ -270,25 +293,34 @@ function MemoryPreviewSummary({ summary }: { summary: string }) {
     return <p>Nothing written yet.</p>;
   }
 
-  const lines = parseSummaryLines(summary);
+  const blocks = parseSummaryBlocks(summary);
+  const introBlock = blocks.find((block) => block.type === 'text');
+  const bulletLines = blocks.flatMap((block) => (block.type === 'list' ? block.lines : []));
 
-  if (isBulletList(lines)) {
-    const previewLines = lines.slice(0, 3);
-    const remainingCount = lines.length - previewLines.length;
+  if (bulletLines.length > 0) {
+    const previewLines = bulletLines.slice(0, 3);
+    const remainingCount = bulletLines.length - previewLines.length;
 
     return (
-      <ul className="memory-preview-list">
-        {previewLines.map((line, index) => (
-          <li key={`${line}-${index}`}>{cleanBulletLine(line)}</li>
-        ))}
-        {remainingCount > 0 ? (
-          <li className="memory-preview-more">{`+${remainingCount} more`}</li>
-        ) : null}
-      </ul>
+      <div className="memory-preview-summary">
+        {introBlock ? <p className="memory-preview-intro">{introBlock.lines.join(' ')}</p> : null}
+        <ul className="memory-preview-list">
+          {previewLines.map((line, index) => (
+            <li key={`${line}-${index}`}>{line}</li>
+          ))}
+          {remainingCount > 0 ? (
+            <li className="memory-preview-more">{`+${remainingCount} more`}</li>
+          ) : null}
+        </ul>
+      </div>
     );
   }
 
-  const previewText = lines.join(' ').replace(/\s+/g, ' ').trim();
+  const previewText = blocks
+    .flatMap((block) => block.lines)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   return <p>{previewText}</p>;
 }
@@ -330,19 +362,25 @@ export function DaySummary({ summary }: { summary: string }) {
     return <p>Nothing written yet.</p>;
   }
 
-  const lines = parseSummaryLines(summary);
+  const blocks = parseSummaryBlocks(summary);
 
-  if (isBulletList(lines)) {
-    return (
-      <ul className="day-summary-list">
-        {lines.map((line, index) => (
-          <li key={`${line}-${index}`}>{cleanBulletLine(line)}</li>
-        ))}
-      </ul>
-    );
-  }
-
-  return <p>{summary}</p>;
+  return (
+    <div className="day-summary-blocks">
+      {blocks.map((block, blockIndex) =>
+        block.type === 'list' ? (
+          <ul className="day-summary-list" key={`list-${blockIndex}`}>
+            {block.lines.map((line, lineIndex) => (
+              <li key={`${line}-${lineIndex}`}>{line}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="day-summary-text" key={`text-${blockIndex}`}>
+            {block.lines.join(' ')}
+          </p>
+        ),
+      )}
+    </div>
+  );
 }
 
 export function Counter({ label, value }: { label: string; value: string }) {

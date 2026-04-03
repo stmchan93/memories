@@ -1333,9 +1333,22 @@
   gap: 8px;
 }
 
+.memory-preview-summary {
+  display: grid;
+  gap: 8px;
+}
+
 .memory-preview-copy p,
 .day-card-highlights {
   margin: 0;
+}
+
+.memory-preview-intro {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-muted);
 }
 
 .memory-preview-list {
@@ -1415,6 +1428,16 @@
 .memory-modal-copy {
   display: grid;
   gap: 10px;
+}
+
+.day-summary-blocks {
+  display: grid;
+  gap: 12px;
+}
+
+.day-summary-text {
+  margin: 0;
+  color: var(--text-strong);
 }
 
 .day-summary-list {
