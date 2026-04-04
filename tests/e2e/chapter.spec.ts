@@ -40,6 +40,23 @@ test.describe.serial('chapter app', () => {
     await expect(publicPage.locator('.memory-preview-card')).toContainText('ate food');
   });
 
+  test('uploading a photo keeps the in-progress day text intact', async ({ page }) => {
+    await signIn(page, account);
+
+    const draftSummary =
+      'Day 1 of unemployment\n- made carbonara udon with kristine\n- worked on memories app';
+
+    await page.getByLabel('What did you do?').fill(draftSummary);
+    await page.getByLabel('Photo').setInputFiles({
+      name: 'memory-second.png',
+      mimeType: 'image/png',
+      buffer: createTinyPngBuffer(),
+    });
+
+    await expect(page.getByLabel('What did you do?')).toHaveValue(draftSummary);
+    await expect(page.locator('.photo-preview-card img')).toHaveCount(1);
+  });
+
   test('showcase item appears in wrapped and public page, and settings can copy the link', async ({
     page,
     context,

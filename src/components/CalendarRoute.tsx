@@ -138,6 +138,7 @@ export function CalendarRoute({
   );
   const previousSelectedDateRef = useRef(selectedDate);
   const skipNextEntrySyncRef = useRef(false);
+  const isDraftDirtyRef = useRef(false);
   const selectedEntry = getDailyCheckinByDate(data.dailyCheckins, selectedDate);
   const calendarDays = useMemo(() => buildCalendarDays(monthCursor), [monthCursor]);
   const monthLabel = formatMonthLabel(monthCursor);
@@ -165,15 +166,34 @@ export function CalendarRoute({
     const didDateChange = previousSelectedDateRef.current !== selectedDate;
     previousSelectedDateRef.current = selectedDate;
 
-    if (skipNextEntrySyncRef.current && !didDateChange) {
+    if (didDateChange) {
+      isDraftDirtyRef.current = false;
+      setDraft(createDraft(selectedEntry, selectedDate));
+      setSaveMessage(null);
+      setPhotoMessage(null);
+      return;
+    }
+
+    if (skipNextEntrySyncRef.current) {
       skipNextEntrySyncRef.current = false;
+      isDraftDirtyRef.current = false;
+      return;
+    }
+
+    if (isDraftDirtyRef.current) {
       return;
     }
 
     setDraft(createDraft(selectedEntry, selectedDate));
     setSaveMessage(null);
     setPhotoMessage(null);
-  }, [selectedDate, selectedEntry?.updatedAt, selectedEntry?.photoDataUrls]);
+  }, [
+    selectedDate,
+    selectedEntry?.updatedAt,
+    selectedEntry?.summary,
+    selectedEntry?.shareVisibility,
+    selectedEntry?.photoDataUrls[0],
+  ]);
 
   useEffect(() => {
     if (!saveMessage) {
@@ -284,6 +304,7 @@ export function CalendarRoute({
         ...current,
         photoDataUrls: [nextPhotoUrl],
       }));
+      isDraftDirtyRef.current = true;
       setPhotoMessage(nextPhotoMessage);
       setSaveMessage(null);
     } catch (error) {
@@ -318,6 +339,7 @@ export function CalendarRoute({
         ...current,
         photoDataUrls: current.photoDataUrls.filter((_, currentIndex) => currentIndex !== index),
       }));
+      isDraftDirtyRef.current = true;
       setPhotoMessage(null);
       setSaveMessage(null);
     } catch {
@@ -360,6 +382,7 @@ export function CalendarRoute({
       note: draft.summary.trim(),
     });
 
+    isDraftDirtyRef.current = false;
     setSaveMessage('Day saved');
   };
 
@@ -498,6 +521,7 @@ export function CalendarRoute({
                 value={draft.summary}
                 disabled={!isEditingToday}
                 onChange={(event) => {
+                  isDraftDirtyRef.current = true;
                   setDraft((current) => ({
                     ...current,
                     summary: event.target.value,
@@ -558,6 +582,7 @@ export function CalendarRoute({
                   onChange={(event) => {
                     const isPrivate = event.target.checked;
 
+                    isDraftDirtyRef.current = true;
                     setDraft((current) => ({
                       ...current,
                       shareVisibility: isPrivate ? 'private' : 'public',
